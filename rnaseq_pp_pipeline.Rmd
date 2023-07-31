@@ -1,0 +1,543 @@
+---
+title: "RNA-Seq Count Data Pre-Processing Pipeline"
+author: "Ed Parkinson"
+date: "31/07/2022"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+## Libraries and scripts
+
+```{r}
+
+here::i_am("rnaseq_pp_pipeline.Rmd")
+
+```
+
+```{r setup, include=FALSE, echo=FALSE}
+
+library(here)
+library(tidyverse)
+library(purrr)
+library(DESeq2)       # differential expression analysis
+library(stats)        # contains functions for curve smoothing - approxfun approx smooth.spline
+library(ggplot2)      # plotting
+library(reshape2)     # data manipulation, including melt function
+library(ggrepel)      # chart labelling
+library(dplyr)        # data manipulations
+library(docstring)    # docstring information
+library(pheatmap)     # heatmaps
+library(RColorBrewer) # heatmaps
+library(dgof)         # required package for Kolmogorov-Smirnov statistic Ka
+library(Hmisc)        # for Hoeffding's D statistic for MA plots
+#library(HTSFilter)    # for independent filtering with HTS approach
+
+```
+
+```{r source scripts}
+
+# source functions contained in scripts
+
+source(here("scr", "scale_transform.R"))
+source(here("scr", "pca_analysis.R"))
+source(here("scr", "l1_distance.R"))
+source(here("scr", "rel_distribution.R"))
+source(here("scr", "assay_quality_ma_d.R"))
+source(here("scr", "ms_jacc_filter.R"))
+
+```
+
+
+## Raw Data Import
+
+Load the raw counts matrix and sample information (meta data) table
+counts.mat should be an p * n matrix of rna-seq count data, with p genes as rows and n samples as columns
+sample.info is a table of meta data, including the class labels / diagnosis ('condition'), with n rows, corresponding to the samples.
+
+```{r import raw data}
+
+## read the sample information file, and ensure sorted by analysisID
+
+sample.info <- read.table(file = here("input", "sample.info.txt"), sep = "\t", quote = "", check.names = F) %>%
+  arrange(analysisID)
+
+## read input counts data and reorder columns to match the sample information
+
+counts.mat <- read.table(file = here("input", "genecount.combined.txt"), sep = "\t", check.names = F)
+counts.mat <- counts.mat[sample.info$analysisID]
+
+# define vector of columns in the sample information file that will be used to annotate QA images and should be converted to factors (e.g. patient condition)
+
+annotation_list = c("novaseq_b", "align_b", "t_point", "condition", "condition_tp") ### FIXME ###
+
+# convert annotation list columns to factors
+
+sample.info[annotation_list] <- lapply(sample.info[annotation_list], factor)
+
+# view sample information table
+
+glimpse(sample.info)
+
+```
+
+Set condition filter to define the values of the condition field included in subsequent analysis
+Filter the dataset to include those condition values only
+
+```{r filter raw data based on the chosen conditions for analysis}
+
+# # set conditions to include, and remove unused factor levels
+
+conditions_filter <- c('control', 'sepsis')
+
+# sample.info <- sample.info %>% dplyr::filter(condition %in% conditions_filter)
+# sample.info$condition <- factor(sample.info$condition, levels = conditions_filter)
+# 
+# ## filter the counts dataset by selected samples
+# counts.mat <- counts.mat %>% dplyr::select(all_of(sample.info$analysisID))
+# dim(counts.mat)
+
+```
+
+
+## Median - Ratio Normalisation with DESeq2
+
+Scale the raw counts to compensate for differences in sequence depth and sample composition between samples.
+Transform with variance stabilising transformation (or rlog transfrmation) to make data homoskedastic and reduce zero-inflation
+
+```{r median-ratio scaling}
+
+# create DESeq Data Set object from the raw counts (converted to a matrix), with condition as the factor of interest
+
+dds <- DESeq2::DESeqDataSetFromMatrix(
+    countData = as.matrix(counts.mat),
+    colData = data.frame(sample.info, row.names = 'analysisID'),
+    design = ~ condition)
+  
+# calculate the normalised count values using the median-of-ratios method
+
+dds <- dds %>% DESeq2::estimateSizeFactors()
+
+# extract raw and noramliseed counts as matrix
+
+raw.counts     <- counts(dds, normalized = FALSE)
+
+norm.counts    <- counts(dds, normalized = TRUE)
+
+# vst (or rlog) tranform the counts
+
+vst.counts     <- vst_transform(counts.mat, sample.info)
+
+# rlog.counts  <- rlog_transform(counts.mat, sample.info)
+
+# save the vst / rlog transformed counts output given the time this step takes to run
+
+write.table(vst.counts, file = here("output", "vst.counts.all.genes.txt"), quote = F, sep = "\t", col.names = T, row.names = T,)
+# vst.counts.fil <- as.matrix(read.csv(file = here("output", "vst.counts.all.genes.txt"), header=TRUE, check.names=F, row.names = 1))
+
+```
+
+
+## QA: Sex labelling check 
+
+Check the expression/ counts of a basket of y-linked genes - the genes on the y-chromosome.
+PCA should clearly cluster male/ female.
+
+```{r sex confirmation}
+
+## filter the transformed counts on subset of ensembl y liniked genes and run a PCA with sex labels
+
+y_linked_gene_names <- c('EIF1AY', 'SMCY', 'ZFY', 'UTY', 'DDX3Y', 'USP9Y')
+
+y_linked_genes <- read.table(here("resources", "y_linked_genes.txt"), sep=",", header=T)
+
+sex_confirm_pca_results <- calc_pca_results_gene_sig(vst.counts,
+                                                    sample.info,
+                                                    y_linked_genes,
+                                                    y_linked_gene_names,
+                                                    conditions_filter,
+                                                    n_pc=9)
+
+# sex_confirm_pca_scree <- pca_scree_plot(sex_confirm_pca_results)
+
+sex_confirm_pca_plot <- pca_scatter_annotated(sex_confirm_pca_results, sample.info, sex)
+
+# save PCA plot
+
+ggsave(filename = , "pca.ylinkedcheck.jpg", plot = sex_confirm_pca_plot, dpi = 300, path = here("figs"))
+
+# annotate the dataframe of pca results to identify mis-classified points 
+
+sex_confirm_pca_annotated <- sex_confirm_pca_results$x %>%
+  as_tibble(rownames = "analysisID") %>%
+  arrange(desc(PC1)) %>%
+  merge(dplyr::select(sample.info, analysisID, sex), by="analysisID",  sort=FALSE)
+
+```
+
+
+## QA: L1 Distance Between Samples
+
+Generate a normalised heatmap of the L1 distances between all samples in the data set
+Sum the L1 distance of each sample from all other samples to identify distant samples as potential outliers
+Identify outliers based on Tukey's method of outlier detection
+
+```{r l1 distanced unfiltered counts}
+
+# generate l1-distance qa outputs on rlog transformed counts output and save manually
+
+# l1_heatmap <- l1_distance_heatmap(vst.counts, sample.info, novaseq_b)  ## FIXME - CHANGE ANNOTATION ##
+
+l1_outlier_output <- l1_distance_barchart(norm.counts, sample.info, novaseq_b) ## FIXME - CHANGE ANNOTATION ##
+
+(l1_outliers <- l1_outlier_output$dist_outliers)
+
+(l1_barchart <- l1_outlier_output$dist_barchart)
+
+# save images
+
+# ggsave(filename = "l1.heatmap.jpg", plot = l1_heatmap, dpi = 1200, path = here("figs"))
+
+ggsave(filename = "l1.bar.pdf", plot = l1_barchart , dpi = 300, path = here("figs"))
+
+```
+
+## QA: Distances Between Samples: PCA
+
+PCA to help identify batch effects and the impact of confounding factors
+
+```{r pca analysis unfiltered counts}
+
+# generate PCA results using the full set of features with rlog normalised counts
+pca_results <- prcomp(t(vst.counts), center = TRUE, scale = FALSE, rank = 9)
+
+# view scree plot
+pca_scree_plot(pca_results)
+
+# PCA plot with each of the alternative annotation fields
+
+for(anno in annotation_list){
+  pca_scatter <- pca_scatter_annotated(pca_results, sample.info, !!sym(anno))
+  ggsave(filename = paste("pca.", anno, ".jpg", sep=""),
+         plot = pca_scatter,
+         dpi = 300,
+         path = here("figs"))
+}
+
+```
+
+
+## QA: Array Count Distributions: K-S Statistic
+
+```{r}
+
+# box plots of relative distribution of samples
+# vst.melt <- meltAnnotate(vst.counts,sample.info,align_b)
+# distBoxPlot(vst.melt.novaset_b)
+
+# calculate k-s statistic for each sample, outliers based on 1.5 IQR and plot bar chart of ks stats
+
+k.stats <- calcKS(norm.counts)
+
+(dist.outliers <- distOutliers(k.stats))
+
+# plot bar chart of KS statistic for each sample
+
+(ks.bar.plot <- ksBar(sample.info, k.stats, dist.outliers, align_b))
+
+# save ouptut image
+
+ggsave(filename = "ks.bar.plot.pdf", plot = ks.bar.plot, dpi = 1200, path = here("figs"))
+
+```
+
+
+## QA: Assay Quality: MA Plots, Hoeffding's D Statistic
+
+```{r}
+
+## calculate Hoeffding's D statistic for each sample and identify outliers
+
+d_stat_output     <- d_stat_function(vst.counts, sample.info, condition, 0.15)
+
+(d_stat_bar_chart  <- dStatBarPlot(d_stat_output$d_stats_df, 0.15))
+
+(d_stat_outliers   <- d_stat_output$outliers)
+
+# save images
+ggsave(filename = "dstat.bar.jpg", plot = d_stat_bar_chart, dpi = 300, path = here("figs"))
+
+# plot MA plots for the top and bottom X values of the D-statistic
+
+(ma_plots          <- ma_plots_function(vst.counts, d_stat_output$d_stats_df, 10, 10))
+
+ggsave(filename = "ma.plots.jpg", plot = ma_plots , dpi = 300, path = here("figs"))
+
+```
+
+## Remove outlier samples from sample information and counts matrix
+
+```{r remove outliers unfiltered counts}
+
+# vector of identified outlier samples: select outliers that appear in at least 2 of the three statistical tests
+
+(outlier_samples <- Reduce(intersect, list(l1_outliers$analysisID, dist.outliers$outliers$analysisID, d_stat_output$outliers$analysisID)))
+
+# remove any rows from the targets table, where the sample id is in the outlier vector
+
+sample.info.qa <- sample.info[!sample.info$analysisID %in% outlier_samples, ]
+
+# remove any columns from the counts.mat table (i.e. the raw counts data) where sample id is in the outlier vector
+
+counts.mat.qa <- counts.mat[, !(colnames(counts.mat) %in% outlier_samples)]
+
+dim(counts.mat.qa)
+dim(sample.info.qa)
+
+```
+
+# renormalise and scale post outlier sample removal
+
+```{r}
+
+# create DESeq Data Set object from the raw counts (converted to a matrix), with condition as the factor of interest
+
+dds <- DESeq2::DESeqDataSetFromMatrix(
+    countData = as.matrix(counts.mat.qa),
+    colData = data.frame(sample.info.qa, row.names = 'analysisID'),
+    design = ~ condition)
+  
+# calculate the normalised count values using the median-of-ratios method
+
+dds <- dds %>% DESeq2::estimateSizeFactors()
+
+# extract raw and noramliseed counts as matrix
+
+raw.counts.qa     <- counts(dds, normalized = FALSE)
+
+norm.counts.qa    <- counts(dds, normalized = TRUE)
+
+```
+
+# save pre-processed data following QA / QC steps for downstream analysis
+
+```{r}
+
+write.table(raw.counts.qa, file = here("output", "raw.counts.qa.all.genes.txt"), quote = F, sep = "\t", col.names = T, row.names = T)
+
+write.table(sample.info.qa, file = here("output", "sample.info.qa.txt"), quote = F, sep = "\t", col.names = T, row.names = T,)
+
+```
+
+
+## Technical Noise Filtering: Low Counts Filter
+
+Calculate the low counts filter threshold using a multi-set Jaccard Index approach
+
+```{r}
+
+# calculate the filter threshold using the multi-set Jaccard
+
+ms.jacc.res <- msJaccFilter(x = norm.counts.qa,
+             condition = condition <- sample.info.qa$condition,
+             s.min=1,
+             s.max=200,
+             s.len = 50
+             )
+
+ggsave(filename = "ms.jacc.plot.jpeg", plot = ms.jacc.res$ms.jacc.plot, dpi = 300, path = here("figs"))
+
+# the above is an adaptation of the approach used in the R package HTSFilter. The original is achieved by:
+# hts.filter <- HTSFilter::HTSFilter(x = raw.counts,conds = targets$condition,s.min=1,s.max=200,s.len=50,normalization = "DESeq")
+
+```
+
+
+Calculate the influential outlier threshold based on Cook's distance
+
+```{r}
+
+dds <- DESeq2::DESeqDataSetFromMatrix(
+    countData = as.matrix(counts.mat.qa),
+    colData = data.frame(sample.info.qa, row.names = 'analysisID'),
+    design = ~ condition)
+
+deseq.res <- DESeq2::DESeq(dds)
+
+cooks.mat <- SummarizedExperiment::assays(deseq.res)[["cooks"]]
+
+cooks.quantile <- 0.95
+m <- ncol(deseq.res)                           # number of samples
+p <- length(unique(sample.info.qa$condition))  # number of model parameters (in the three condition case)
+
+(h.threshold <- stats::qf(cooks.quantile, p, m - p))
+
+```
+
+## Filter Raw Counts based on the low counts and influential outlier thresholds
+
+```{r filter raw counts based on thresholds}
+
+# create low counts filter index
+
+lc.idx <- apply(norm.counts.qa, 1, function(x){sum(x > ms.jacc.res$threshold) >= 1})
+
+lc.idx <- which(apply(norm.counts.qa, 1, function(x){sum(x > ms.jacc.res$threshold) >= 1}))
+length(lc.idx)
+# create outlier counts filter index
+
+ol.idx <- apply(cooks.mat, 1, function(x){(max(x) < h.threshold) >= 1})
+length(ol.idx)
+# filter the counts data and annotation
+
+counts.mat.fil <- raw.counts.qa[which(as.logical(lc.idx * ol.idx)),]
+dim(counts.mat.fil)
+sprintf("Genes filtered: %s; Genes remaining: %s", nrow(counts.mat)-nrow(counts.mat.fil), nrow(counts.mat.fil))
+
+```
+
+## Median - Ratio scaled the filtered counts
+
+```{r}
+
+## median-ratio scale the filtered counts
+
+# create DESeq Data Set object from the raw counts (converted to a matrix), with condition as the factor of interest
+
+dds <- DESeq2::DESeqDataSetFromMatrix(
+    countData = as.matrix(counts.mat.fil),
+    colData = data.frame(sample.info.qa, row.names = 'analysisID'),
+    design = ~ condition)
+  
+# calculate the normalised count values using the median-of-ratios method
+
+dds <- dds %>% DESeq2::estimateSizeFactors()
+
+# extract raw and noramliseed counts as matrix
+
+raw.counts.fil     <- counts(dds, normalized = FALSE)
+
+norm.counts.fil    <- counts(dds, normalized = TRUE)
+
+# vst (or rlog) tranform the counts
+
+vst.counts.fil     <- vst_transform(counts.mat.fil, sample.info.qa)
+
+# rlog.counts  <- rlog_transform(counts.mat.fil, sample.info.qa)
+
+# save the vst / rlog transformed counts output given the time this step takes to run
+
+write.table(vst.counts.fil, file = here("output", "vst.counts.fil.all.genes.txt"), quote = F, sep = "\t", col.names = T, row.names = T,)
+# vst.counts.fil <- as.matrix(read.csv(file = here("output", "vst.counts.fil.all.genes.txt"), header=TRUE, check.names=F, row.names = 1))
+
+```
+
+## QA: Filtered: L1 Distance Between Samples
+
+```{r}
+
+# generate l1-distance qa outputs on rlog transformed counts output and save manually
+
+# l1.heatmap <- l1_distance_heatmap(vst.counts, sample.info, novaseq_b)  ## FIXME - CHANGE ANNOTATION ##
+
+l1.outlier.output.fil <- l1_distance_barchart(norm.counts.fil, sample.info.qa, novaseq_b) ## FIXME - CHANGE ANNOTATION ##
+
+(l1.outliers.fil <- l1.outlier.output.fil$dist_outliers)
+
+(l1.barchart.fil <- l1.outlier.output.fil$dist_barchart)
+
+# save images
+
+# ggsave(filename = "l1.heatmap.jpg", plot = l1_heatmap, dpi = 1200, path = here("figs"))
+
+ggsave(filename = "l1.bar.fil.pdf", plot = l1_barchart , dpi = 300, path = here("figs"))
+
+```
+
+## QA: Filtered: Distances Between Samples: PCA
+
+PCA to help identify batch effects and the impact of confounding factors
+
+```{r}
+
+# generate PCA results using the full set of features with rlog normalised counts
+pca.results.fil <- prcomp(t(vst.counts.fil), center = TRUE, scale = FALSE, rank = 9)
+
+# view scree plot
+pca_scree_plot(pca.results.fil)
+
+# PCA plot with each of the alternative annotation fields
+
+for(anno in annotation_list){
+  pca.scatter <- pca_scatter_annotated(pca.results.fil, sample.info.qa, !!sym(anno))
+  ggsave(filename = paste("pca.fil.", anno, ".jpg", sep=""),
+         plot = pca.scatter,
+         dpi = 300,
+         path = here("figs"))
+}
+
+```
+
+## QA: Filtered: Array Count Distributions: K-S Statistic
+
+```{r}
+
+# box plots of relative distribution of samples
+# vst.melt <- meltAnnotate(vst.counts,sample.info,align_b)
+# distBoxPlot(vst.melt.novaset_b)
+
+# calculate k-s statistic for each sample, outliers based on 1.5 IQR and plot bar chart of ks stats
+
+k.stats.fil <- calcKS(norm.counts.fil)
+
+(dist.outliers.fil <- distOutliers(k.stats.fil))
+
+# plot bar chart of KS statistic for each sample
+
+(ks.bar.plot.fil <- ksBar(sample.info.qa, k.stats.fil, dist.outliers.fil, align_b))
+
+# save ouptut image
+
+ggsave(filename = "ks.bar.plot.fil.pdf", plot = ks.bar.plot.fil, dpi = 1200, path = here("figs"))
+
+```
+
+
+## QA: Filtered: Assay Quality: MA Plots, Hoeffding's D Statistic
+
+
+```{r d statistic unfiltered counts}
+
+## calculate Hoeffding's D statistic for each sample and identify outliers
+
+d.stat.output.fil     <- d_stat_function(vst.counts.fil, sample.info.qa, condition, 0.15)
+
+(d.stat.bar.chart.fil  <- dStatBarPlot(d.stat.output.fil$d_stats_df, 0.15))
+
+(d.stat.outliers.fil   <- d.stat.output.fil$outliers)
+
+# save images
+ggsave(filename = "dstat.bar.fil.jpg", plot = d.stat.bar.chart.fil, dpi = 300, path = here("figs"))
+
+# plot MA plots for the top and bottom X values of the D-statistic
+
+(ma.plots.fil <- ma_plots_function(vst.counts.fil, d.stat.output.fil$d_stats_df, 10, 10))
+
+ggsave(filename = "ma.plots.fil.jpg", plot = ma.plots.fil , dpi = 300, path = here("figs"))
+
+```
+
+
+## QA: Filtered: Remove outliers from input data
+
+```{r}
+
+# intersection between L1 and KS tests
+
+(outlier.samples.L1KS <- intersect(l1.outliers.fil$analysisID, dist.outliers.fil$outliers$analysisID))
+
+# intersection between all three tests
+
+(outlier.samples.fil <- Reduce(intersect, list(l1.outliers.fil$analysisID, dist.outliers.fil$outliers$analysisID, d.stat.output.fil$outliers$analysisID)))
+  
+```
