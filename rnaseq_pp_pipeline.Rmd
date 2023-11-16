@@ -126,7 +126,7 @@ norm.counts    <- counts(dds, normalized = TRUE)
 
 # vst (or rlog) tranform the counts
 
-vst.counts     <- vst_transform(counts.mat, sample.info)
+vst.counts <- DESeq2::varianceStabilizingTransformation(dds, blind=FALSE) %>% assay
 
 # rlog.counts  <- rlog_transform(counts.mat, sample.info)
 
@@ -358,7 +358,7 @@ Calculate the influential outlier threshold based on Cook's distance
 ```{r}
 
 dds <- DESeq2::DESeqDataSetFromMatrix(
-    countData = as.matrix(counts.mat.qa),
+    countData = as.matrix(raw.counts.qa),
     colData = data.frame(sample.info.qa, row.names = 'analysisID'),
     design = ~ condition)
 
@@ -382,16 +382,14 @@ p <- length(unique(sample.info.qa$condition))  # number of model parameters (in 
 
 lc.idx <- apply(norm.counts.qa, 1, function(x){sum(x > ms.jacc.res$threshold) >= 1})
 
-lc.idx <- which(apply(norm.counts.qa, 1, function(x){sum(x > ms.jacc.res$threshold) >= 1}))
-length(lc.idx)
 # create outlier counts filter index
 
 ol.idx <- apply(cooks.mat, 1, function(x){(max(x) < h.threshold) >= 1})
-length(ol.idx)
+
 # filter the counts data and annotation
 
 counts.mat.fil <- raw.counts.qa[which(as.logical(lc.idx * ol.idx)),]
-dim(counts.mat.fil)
+
 sprintf("Genes filtered: %s; Genes remaining: %s", nrow(counts.mat)-nrow(counts.mat.fil), nrow(counts.mat.fil))
 
 ```
@@ -427,8 +425,11 @@ vst.counts.fil     <- vst_transform(counts.mat.fil, sample.info.qa)
 
 # save the vst / rlog transformed counts output given the time this step takes to run
 
-write.table(vst.counts.fil, file = here("output", "vst.counts.fil.all.genes.txt"), quote = F, sep = "\t", col.names = T, row.names = T,)
-# vst.counts.fil <- as.matrix(read.csv(file = here("output", "vst.counts.fil.all.genes.txt"), header=TRUE, check.names=F, row.names = 1))
+write.table(raw.counts.fil, file = here("output", "raw.counts.fil.txt"), quote = F, sep = "\t", col.names = T, row.names = T,)
+write.table(vst.counts.fil, file = here("output", "vst.counts.fil.txt"), quote = F, sep = "\t", col.names = T, row.names = T,)
+
+# raw.counts.fil <- as.matrix(read.csv(file = here("output", "raw.counts.fil.txt"), header=TRUE, check.names=F, row.names = 1))
+# vst.counts.fil <- as.matrix(read.csv(file = here("output", "vst.counts.fil.txt"), header=TRUE, check.names=F, row.names = 1))
 
 ```
 
