@@ -41,7 +41,7 @@ distBoxPlot <- function(logNormCount.melt){
 
 calcKS <- function(vst.counts){
   
-  pooled.vst.counts = sample(c(vst.counts), 100000)
+  pooled.vst.counts <- sample(c(as.matrix(vst.counts)), 100000)
   
   ks.results <- apply(vst.counts, 2, stats::ks.test, y=pooled.vst.counts, exact = NULL)
   
@@ -58,28 +58,62 @@ calcKS <- function(vst.counts){
 # identify outlier values that lie more than 1.5IQR beyond 25th or 75th percentiles
 
 distOutliers <- function(k.stats){
+  
   ks.outlier.threshold <- boxplot.stats(k.stats$k_stat)$stats[5]
-  dist.outliers <- dplyr::filter(k.stats, k_stat > ks.outlier.threshold) %>% dplyr::arrange(desc(k_stat))
+  
+  # dist.outliers <- dplyr::filter(k.stats, k_stat > ks.outlier.threshold) %>% dplyr::arrange(desc(k_stat))
+  
+  dist.outliers <- which(tibble::deframe(k.stats) > ks.outlier.threshold)
+  
   return(list(threshold = ks.outlier.threshold, outliers = dist.outliers))
 }
 
-# plot bar chart of D statistic for each sample
+# plot bar chart of KS statistic for each sample
 
-ksBar <- function(sample.info, k.stats, dist.outliers, annotation){
+ksBar <- function(targets, metrics, dist.outliers, annotation){
+  
   annotation <- enquo(annotation)
-  sample.info %>%
-    dplyr::left_join(k.stats, by = 'analysisID') %>% 
-    ggplot(aes(x=reorder(analysisID, k_stat), y = k_stat, fill=(!!annotation))) +
+  
+  ks.plot.data <- data.frame(targets %>% dplyr::select(analysisID, all_of((!!annotation))),
+                             'k_stat' = metrics$k_stat)
+  
+  
+  ks.barchart <- ggplot(ks.plot.data, aes(x=reorder(analysisID, k_stat), y = k_stat, fill=get(names(ks.plot.data)[2]))) +
     geom_bar(stat='identity') +
+    coord_flip() +
     ggtitle("Ranked K-S Statistic") + 
     xlab("sampleID") + 
     ylab("k-s statistic") + 
-    coord_flip() +
     theme(legend.title = element_blank(),
           axis.text.y = element_blank(),
           axis.ticks.y = element_blank()) +
     geom_hline(yintercept = dist.outliers$threshold)
+  
+  return(ks.barchart)
 }
+
+
+## Previous - annotation now working # plot bar chart of KS statistic for each sample
+
+# ksBar <- function(sample.info, k.stats, dist.outliers, annotation){
+#   
+#   annotation <- enquo(annotation)
+#   
+#   ks.barchart <- sample.info %>%
+#     dplyr::left_join(k.stats, by = 'analysisID') %>% 
+#     ggplot(aes(x=reorder(analysisID, k_stat), y = k_stat, fill=(!!annotation))) +
+#     geom_bar(stat='identity') +
+#     ggtitle("Ranked K-S Statistic") + 
+#     xlab("sampleID") + 
+#     ylab("k-s statistic") + 
+#     coord_flip() +
+#     theme(legend.title = element_blank(),
+#           axis.text.y = element_blank(),
+#           axis.ticks.y = element_blank()) +
+#     geom_hline(yintercept = dist.outliers$threshold)
+#   
+#   return(ks.barchart)
+# }
 
 # =======================================================================
 

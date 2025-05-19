@@ -91,16 +91,16 @@ pca_scatter_annotated <- function(pca_results, targets, annotation) {
           axis.title=element_text(size=12),
           plot.title=element_text(size=14),
           legend.text=element_text(size=10),
-          legend.title=element_text(size=10)) #+
+          legend.title=element_text(size=10)) +
     # scale_colour_discrete(drop=TRUE, limits = levels(pca_results_merged$annotation)) + # need to figure out how to ensure label colours are consistent
     # the colours need to be defined by the factors of the annotation column, rather than explicitly specified
     # maybe use limits=levels(get(names(xxx))
     # scale_colour_manual(values = plot_colours, name = "Patient Condition:") +
-    # geom_text_repel(aes(label = analysisID),
-    #                 size = 3,
-    #                 box.padding   = 0.15,
-    #                 point.padding = 0.25,
-    #                 segment.color = 'grey50')
+    geom_text_repel(aes(label = analysisID),
+                    size = 3,
+                    box.padding   = 0.15,
+                    point.padding = 0.25,
+                    segment.color = 'grey50')
   
   # excluded from function
   # stat_ellipse(level = 0.85) +
