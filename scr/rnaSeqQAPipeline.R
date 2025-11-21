@@ -1,4 +1,4 @@
-rnaSeqQAPipeline <- function(norm.counts, vst.counts, sample.info, annotation_list, out_dir, ma_topx, n_samp = 5000){
+rnaSeqQAPipeline <- function(norm.counts, vst.counts, sample.info, annotation_list, out_dir, ma_topx, n_samp = 5000, pqual = 300){
   
   # L1 distance: calculate scaled L1 distance matrix, identify outliers based on Tukey's distance
   
@@ -10,11 +10,10 @@ rnaSeqQAPipeline <- function(norm.counts, vst.counts, sample.info, annotation_li
   
   pca_results <- stats::prcomp(t(vst.counts), center = TRUE, scale = FALSE, rank = 9)
   
-  ggsave(filename = "pca.scree.pdf", plot = pcaScreePlot(pca_results), dpi = 300, path = out_dir)
-  
+  ggsave(filename = "pca.scree.pdf", plot = pcaScreePlot(pca_results), dpi = pqual, path = out_dir)
   
   # KS distance: calculate k-s statistic for each sample, outliers based on 1.5 IQR
-  
+ 
   k.stats <- calcKS(norm.counts)
   
   dist.outliers <- ksOutliers(k.stats)
@@ -35,26 +34,26 @@ rnaSeqQAPipeline <- function(norm.counts, vst.counts, sample.info, annotation_li
   
   pca.sex.check <- pcaScatterAnnotated(pca_results = pca.y.linked, targets = sample.info, annotation = sex)
   
-  ggsave(filename = "pca.sex.check.pdf", plot = pca.sex.check, dpi = 300, path = out_dir)
+  ggsave(filename = "pca.sex.check.pdf", plot = pca.sex.check, dpi = pqual, path = out_dir)
   
   # loop through annotations to create the plots
   
   for(anno in annotation_list){
     
     l1.bar <- l1DistBar(targets = sample.info, metrics = l1.metrics, annotation = anno)
-    ggsave(filename = paste("l1.bar", anno, "pdf", sep = "."), plot = l1.bar , dpi = 300, path = out_dir)
+    ggsave(filename = paste("l1.bar", anno, "pdf", sep = "."), plot = l1.bar , dpi = pqual, path = out_dir)
     
     pca.scatter <- pcaScatterAnnotated(pca_results = pca_results, targets = sample.info, annotation = !!sym(anno))
-    ggsave(filename = paste("pca", anno, "pdf", sep="."), plot = pca.scatter, dpi = 300, path = out_dir)
+    ggsave(filename = paste("pca", anno, "pdf", sep="."), plot = pca.scatter, dpi = pqual, path = out_dir)
     
     ks.bar.plot <- ksBar(targets = sample.info, metrics = k.stats, dist.outliers = dist.outliers, annotation = anno)
-    ggsave(filename = paste("ks.bar", anno, "pdf", sep = "."), plot = ks.bar.plot, dpi = 300, path = out_dir)
+    ggsave(filename = paste("ks.bar", anno, "pdf", sep = "."), plot = ks.bar.plot, dpi = pqual, path = out_dir)
     
     d.stat.bar <- dStatBar(targets = sample.info, metrics = d.stats, annotation = anno)
-    ggsave(filename = paste("d.stat.bar", anno, "pdf", sep = "."), plot = d.stat.bar, dpi = 300, path = out_dir)
+    ggsave(filename = paste("d.stat.bar", anno, "pdf", sep = "."), plot = d.stat.bar, dpi = pqual, path = out_dir)
     
     ma.plot <- maPlots(vst.counts = vst.counts, targets = sample.info, metrics = d.stats, annotation = anno, top_x= ma_topx, bottom_x= ma_topx, subsample = n_samp)
-    ggsave(filename = paste("ma.plot", anno, "pdf", sep = "."), plot = ma.plot, dpi = 300, path = out_dir)
+    ggsave(filename = paste("ma.plot", anno, "pdf", sep = "."), plot = ma.plot, dpi = pqual, path = out_dir)
     
   }
   

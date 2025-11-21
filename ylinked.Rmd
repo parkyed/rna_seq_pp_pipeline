@@ -1,0 +1,31 @@
+
+## Script to create the list of y linked genes as ensembl IDs
+
+```{r}
+
+# gene names - hard coded
+y.linked.gene.names <- c('EIF1AY', 'SMCY', 'ZFY', 'UTY', 'DDX3Y', 'USP9Y')
+
+# load mapping from NCBI gene names to ensembl ID
+y.linked.gene.mapping <- read.table(here("resources", "y_linked_genes.txt"), sep=",", header=T)
+
+# filter genes list by selected gene names to give subset of ensembl IDs
+y.linked.ensembl <- dplyr::filter(y.linked.gene.mapping,
+                                    Gene.name %in% y.linked.gene.names)$Gene.stable.ID
+
+
+# save list of ensembl IDs for use in sex test PCA in pipeline
+write.table(pca_gene_signature, file = here("resources", "y_linked_ensemblID.txt"), col.names = F, row.names = F)
+
+
+```
+
+test script
+
+```{r}
+
+c(matrix(1:20, nrow = 4, ncol = 5))
+
+```
+
+

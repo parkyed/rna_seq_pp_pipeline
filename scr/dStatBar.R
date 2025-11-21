@@ -27,14 +27,26 @@ dStatBar <- function(targets, metrics, annotation) {
     geom_hline(yintercept = metrics$dstat.outlier.threshold) +
     scale_fill_manual(values = cbp1)  +
     scale_y_continuous(limits = c(-0.01 , (max(dstat.plot.data$d_stat) *1.05))) +
+    
+    # annotate outliers with an asterisk and labels in red
     geom_point(data = dstat.plot.data %>% dplyr::filter(d_stat > metrics$dstat.outlier.threshold),
-               aes(x = analysisID, y = -0.005), shape = 8, show.legend = F) + 
+               aes(x = analysisID, y = -0.003), shape = 8, show.legend = F) + 
     annotate(geom = "text",
              x = dstat.plot.data %>% dplyr::filter(d_stat > metrics$dstat.outlier.threshold) %>% .$analysisID,
-             y = -0.008,
+             y = -0.005,
              hjust = 1,
              size = 3,
-             label = dstat.plot.data %>% dplyr::filter(d_stat >metrics$dstat.outlier.threshold) %>% .$analysisID)
+             colour = "red",
+             label = dstat.plot.data %>% dplyr::filter(d_stat > metrics$dstat.outlier.threshold) %>% .$analysisID) +
+    
+    # annotate the rest of the samples in black
+    annotate(geom = "text",
+             x = dstat.plot.data %>% dplyr::filter(d_stat <= metrics$dstat.outlier.threshold) %>% .$analysisID,
+             y = -0.005,
+             hjust = 1,
+             size = 3,
+             colour = "black",
+             label = dstat.plot.data %>% dplyr::filter(d_stat <= metrics$dstat.outlier.threshold) %>% .$analysisID)
   
   return(d.stat.barplot)
 }

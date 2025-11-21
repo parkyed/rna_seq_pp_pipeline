@@ -26,14 +26,26 @@ l1DistBar <- function(targets, metrics, annotation){
     scale_y_continuous(limits = c(-7 , (max(l1.plot.data$SumDist) *1.05))) +
     geom_hline(yintercept = metrics$l1.outlier.threshold) +
     scale_fill_manual(values = cbp1) +
+    
+    # annotate outliers with an asterisk and labels in red
     geom_point(data = l1.plot.data %>% dplyr::filter(SumDist > metrics$l1.outlier.threshold),
                aes(x = analysisID, y = -1), shape = 8, show.legend = F) + 
+    
     annotate(geom = "text",
              x = l1.plot.data %>% dplyr::filter(SumDist > metrics$l1.outlier.threshold) %>% .$analysisID,
              y = -2,
              hjust = 1,
              size = 3,
-             label = l1.plot.data %>% dplyr::filter(SumDist > metrics$l1.outlier.threshold) %>% .$analysisID)
+             colour = "red",
+             label = l1.plot.data %>% dplyr::filter(SumDist > metrics$l1.outlier.threshold) %>% .$analysisID) + 
+    # annovate the rest of the samples in black
+    annotate(geom = "text",
+             x = l1.plot.data %>% dplyr::filter(SumDist <= metrics$l1.outlier.threshold) %>% .$analysisID,
+             y = -2,
+             hjust = 1,
+             size = 3,
+             colour = "black",
+             label = l1.plot.data %>% dplyr::filter(SumDist <= metrics$l1.outlier.threshold) %>% .$analysisID)
   
   
   return(l1.barchart)

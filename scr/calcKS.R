@@ -4,7 +4,7 @@ calcKS <- function(vst.counts, n_samp = 5000){
   #'
   #' @param vst.counts matrix vst transformed counts
   
-  pooled.vst.counts <- sample(c(as.matrix(vst.counts)), n_samp)
+  pooled.vst.counts <- sample(c(as.matrix(vst.counts)), n_samp) # pooled counts is a random sample from all values in the matrix
   
   ks.results <- apply(vst.counts, 2, stats::ks.test, y=pooled.vst.counts, exact = NULL)
   

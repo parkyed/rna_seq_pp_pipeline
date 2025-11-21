@@ -55,7 +55,8 @@ maPlots <- function(vst.counts, targets, metrics, annotation, top_x, bottom_x, s
           legend.text = element_text(size = 18),
           axis.text = element_text(size = 18),
           axis.title = element_text(size = 18),
-          panel.grid.minor = element_blank()) +
+          panel.grid.minor = element_blank(),
+          strip.text.x = element_text(size = 14, margin = margin())) +
     guides(colour = guide_legend(override.aes = list(size=7, alpha = 1))) # increase the size of the legend points, override the alpha above
   ma_plots
   

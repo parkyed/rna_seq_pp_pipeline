@@ -58,7 +58,7 @@ source(here("scr", "loadRData.R"))
 
 ```{r}
 
-dset <- "protect_v2" ## FIXME
+dset <- "protect_v3" ## FIXME
 dset.data.path <- "/Users/ep/Documents/1_datasets/dataset_pearth/an0304/output/v2/" ## FIXME
 
 dir_name <- here("qa_image_out", dset)
@@ -150,8 +150,8 @@ vst.counts <- DESeq2::varianceStabilizingTransformation(dds, blind=FALSE) %>% as
 
 # test datasets
 
-norm.counts.test <- norm.counts[1:10000,]
-vst.counts.test <- vst.counts[1:10000,]
+# norm.counts.test <- norm.counts[1:10000,]
+# vst.counts.test <- vst.counts[1:10000,]
 
 outlier.lst <- rnaSeqQAPipeline(norm.counts,
                                 vst.counts,
@@ -159,12 +159,12 @@ outlier.lst <- rnaSeqQAPipeline(norm.counts,
                                 annotation_list = annotation.list,
                                 out_dir = here("qa_image_out", dset),
                                 ma_topx = 10,
-                                n_samp = 10000)
+                                n_samp = 10000,
+                                pqual = 500)
 
 ```
 
 ## outlier dataframe
-
 
 ```{r}
 
@@ -184,8 +184,6 @@ outlier.df <- data.frame(
 print(outlier.df.xtable <- xtable(outlier.df),include.rownames = FALSE, include.colnames = TRUE, sanitize.text.function = I, hline.after = c(0))
 
 
-
-
 ```
 
 
@@ -200,6 +198,7 @@ mat.dist.matrix <- l1DistanceMatrix(norm.counts) # [find a faster function for t
 
 l1.metrics <- l1DistOutliers(mat.dist.matrix)
 
+l1DistBar(targets = sample.info, metrics = l1.metrics, annotation = "condition")
 l1DistBar(targets = sample.info, metrics = l1.metrics, annotation = "library_batch")
 
 annotation.list
@@ -228,12 +227,23 @@ l1.plot.data <- data.frame(sample.info %>% dplyr::select(analysisID, condition),
              y = -2,
              hjust = 1,
              size = 3,
-             label = l1.plot.data %>% dplyr::filter(SumDist > l1.metrics$l1.outlier.threshold) %>% .$analysisID)
+             colour = "red",
+             label = l1.plot.data %>% dplyr::filter(SumDist > l1.metrics$l1.outlier.threshold) %>% .$analysisID) + 
+    annotate(geom = "text",
+             x = l1.plot.data %>% dplyr::filter(SumDist <= l1.metrics$l1.outlier.threshold) %>% .$analysisID,
+             y = -2,
+             hjust = 1,
+             size = 3,
+             colour = "black",
+             label = l1.plot.data %>% dplyr::filter(SumDist <= l1.metrics$l1.outlier.threshold) %>% .$analysisID)
+  
+  
 ```
 
 KS Bar
 
 ```{r}
+
 ## ks bar chart modification
   
 k.stats <- calcKS(norm.counts)
@@ -268,12 +278,20 @@ dist.outliers$threshold
              y = -0.02,
              hjust = 1,
              size = 3,
-             label = ks.plot.data %>% dplyr::filter(k_stat > dist.outliers$threshold) %>% .$analysisID)
+             colour = "red",
+             label = ks.plot.data %>% dplyr::filter(k_stat > dist.outliers$threshold) %>% .$analysisID) + 
+    annotate(geom = "text",
+             x = ks.plot.data %>% dplyr::filter(k_stat  <= dist.outliers$threshold) %>% .$analysisID,
+             y = -0.02,
+             hjust = 1,
+             size = 3,
+             colour = "black",
+             label = ks.plot.data %>% dplyr::filter(k_stat  <= dist.outliers$threshold) %>% .$analysisID)
   )
-  
+ 
+   
 ksBar(sample.info, k.stats, dist.outliers, "library_batch")
 
-  
 ```
 
 Dstat bar
@@ -304,7 +322,7 @@ metrics <- d.stats
          aes(x = analysisID, y = -0.005), shape = 8, show.legend = F) + 
     annotate(geom = "text",
              x = dstat.plot.data %>% dplyr::filter(d_stat > metrics$dstat.outlier.threshold) %>% .$analysisID,
-             y = -0.008,
+             y = -0.005,
              hjust = 1,
              size = 3,
              label = dstat.plot.data %>% dplyr::filter(d_stat >metrics$dstat.outlier.threshold) %>% .$analysisID)
@@ -337,4 +355,73 @@ ma.plot.tst
 
 ```
 
+Testing PCA plots with elipses:
+
+```{r}
+
+# pcaScatterAnnotatedTEST <- function(pca_results, targets, annotation) {
+  
+  #' Generate a 2D scatter plot of the first two PCs, annotated with a given column in the phenotype data
+  #'
+  #' @param pca_results the matrix of eigen values output from the PCA cacluation
+  #' @param targets the targets matrix
+  #' @param annotation The the name of the column in the targets dataframe used to annotate plot
+  
+targets <- sample.info
+annotation <- "condition"
+pca_results <- stats::prcomp(t(vst.counts), center = TRUE, scale = FALSE, rank = 9)
+
+  annotation <- enquo(annotation)  
+  
+  ## compute the variance explained by each PC for the n PCs calculated
+  pca_var_explained <- (pca_results$sdev^2/sum(pca_results$sdev^2))
+  
+  ## Scatter plots of pairs of principle components
+  pca_results_merged <- pca_results$x %>%
+    as_tibble(rownames = "analysisID") %>%
+    merge(targets, by="analysisID",  sort=FALSE)    # may need to left join this...
+
+  # calculate centroids
+  controids.df <- pca_results_merged %>% dplyr::select(PC1, PC2, condition)
+
+  (centroids.df <- pca_results_merged %>% dplyr::select(PC1, PC2, !!annotation))
+  colnames(centroids.df) <- c("PC1", "PC2", "anno")
+  centroids <- aggregate(cbind(PC1, PC2)~anno,centroids.df,mean)
+
+  pca_plot <- ggplot(pca_results_merged, aes(x=PC1,y=PC2)) +
+    geom_point(aes(color=(!!annotation)),size=4) +
+    geom_point(data = centroids, size = 5) +
+    theme_bw(base_size=32) +
+    labs(x=paste0("PC1: ",round(pca_var_explained[1]*100,1),"%"),
+         y=paste0("PC2: ",round(pca_var_explained[2]*100,1),"%"),
+         color = element_blank()) +
+    theme(legend.position="bottom",
+          legend.margin=ggplot2::margin(-5,-5,-5,-5),
+          legend.box.margin=ggplot2::margin(-5,-5,-5,-5),
+          axis.text=element_text(size=18),
+          axis.title=element_text(size=18),
+          plot.title=element_text(size=18),
+          legend.text=element_text(size=18),
+          legend.title=element_text(size=18)) +
+    stat_ellipse(aes(color=(!!annotation)), level = 0.85) +
+    scale_colour_manual(values = cbp1)
+
+  pca_plot
+  # excluded from function
+
+  # geom_text_repel(aes(label = analysisID),
+  #                 size = 3,
+  #                 box.padding   = 0.15,
+  #                 point.padding = 0.25,
+  #                 segment.color = 'grey50')
+  
+#   return(pca_plot)
+# }
+
+
+
+pca_results <- stats::prcomp(t(vst.counts), center = TRUE, scale = FALSE, rank = 9)
+pcaScatterAnnotatedTEST(pca_results = pca_results, targets = sample.info, annotation = condition)
+
+```
 
