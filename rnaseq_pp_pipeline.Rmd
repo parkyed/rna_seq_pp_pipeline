@@ -58,7 +58,7 @@ source(here("scr", "loadRData.R"))
 
 ```{r}
 
-dset <- "protect_v3" ## FIXME
+dset <- "protect_v4" ## FIXME
 dset.data.path <- "/Users/ep/Documents/1_datasets/dataset_pearth/an0304/output/v2/" ## FIXME
 
 dir_name <- here("qa_image_out", dset)
