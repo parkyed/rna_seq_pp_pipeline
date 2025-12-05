@@ -24,17 +24,17 @@ rnaSeqQAPipeline <- function(norm.counts, vst.counts, sample.info, annotation_li
   
   # Sex check - pca plot of y linked genes only
   
-  y.linked.ensembl <- read.table(here("resources", "y_linked_ensemblID.txt"), sep="", header=F) %>% deframe
-
-  y.linked.ensembl <- as.list(rownames(vst.counts)[rownames(vst.counts) %in% y.linked.ensembl]) # ensure all y-linked genes are in the dataset
-  
-  vst.y.linked <- subset(vst.counts, row.names(vst.counts) %in% y.linked.ensembl)
-
-  pca.y.linked <- stats::prcomp(t(vst.y.linked), center = TRUE, scale = FALSE, rank = 9)
-  
-  pca.sex.check <- pcaScatterAnnotated(pca_results = pca.y.linked, targets = sample.info, annotation = sex)
-  
-  ggsave(filename = "pca.sex.check.pdf", plot = pca.sex.check, dpi = pqual, path = out_dir)
+  # y.linked.ensembl <- read.table(here("resources", "y_linked_ensemblID.txt"), sep="", header=F) %>% deframe
+  # 
+  # y.linked.ensembl <- as.list(rownames(vst.counts)[rownames(vst.counts) %in% y.linked.ensembl]) # ensure all y-linked genes are in the dataset
+  # 
+  # vst.y.linked <- subset(vst.counts, row.names(vst.counts) %in% y.linked.ensembl)
+  # 
+  # pca.y.linked <- stats::prcomp(t(vst.y.linked), center = TRUE, scale = FALSE, rank = 9)
+  # 
+  # pca.sex.check <- pcaScatterAnnotated(pca_results = pca.y.linked, targets = sample.info, annotation = sex)
+  # 
+  # ggsave(filename = "pca.sex.check.pdf", plot = pca.sex.check, dpi = pqual, path = out_dir)
   
   # loop through annotations to create the plots
   
